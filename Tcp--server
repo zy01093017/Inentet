@@ -1,0 +1,79 @@
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <string.h>
+
+// ./server  ip地址  端口号
+int main(int argc,char* argv[])
+{
+        //进程 ip地址  端口号
+        if(argc != 3){
+            perror("Usage ./server [ip] [port]\n");
+            return 1;
+        }
+        //ipv4 面向字节流  创建socket
+        int new_sock = socket(AF_INET, SOCK_STREAM,0);
+        if(new_sock < 0){
+            perror("socket");
+            return 2;
+        }
+
+        struct sockaddr_in server;//绑定的是服务器的ip和端口号
+        server.sin_family = AF_INET;//协议族
+        server.sin_addr.s_addr = inet_addr(argv[1]);//将ip专程4字节ip地址，在转成大端字节序
+        server.sin_port = htons(atoi(argv[2]));
+
+
+        //绑定端口号
+        int ret = bind(new_sock, (struct sockaddr*)&server,sizeof(server));
+        if(ret < 0){//绑定失败
+            perror("bind");
+            return 3;
+        }
+        
+        //设置成监听状态,socket文件描述符,第二个参数为连接客户端的最大个数
+        int lis = listen(new_sock, 5);
+        if(lis < 0){
+            perror("listen");
+            return 4;
+        }
+        
+        printf("listen success...\n");
+       
+        struct sockaddr_in client;
+        while(1){
+            //获取与客户端的连接,这里的结构体获取的是客户端的ip和端口号，还没传过来
+            socklen_t len = sizeof(client);
+            int client_sock = accept(new_sock,(struct sockaddr*)&client, &len);
+            if(client_sock < 0){//获取失败,接着获取
+                perror("accept");
+                continue;
+            }
+
+            printf("Get connet[%s]:[%d]\n",inet_ntoa(client.sin_addr),ntohs(client.sin_port));
+            char buf[1024];
+            //获取连接，也监听到了客户端
+            while(1){//一直从客户端读取信息，在将信息发回给客户端
+                ssize_t s = read(client_sock, buf, sizeof(buf)-1);
+               if(s > 0){//读到客户端发送的消息
+                   buf[s-1] = 0;
+                   printf("client#: %s\n",buf);
+               }else if(s == 0){//读到文件结尾
+                   printf("client quit...\n");
+                    break;
+               }
+               else{//读取出错
+                   break;
+               }
+
+               //将数据写回客户端
+               ssize_t w = write(client_sock, buf, strlen(buf));
+            }
+        }
+    
+        close(new_sock);
+    return 0;
+}
