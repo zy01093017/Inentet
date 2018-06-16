@@ -1,0 +1,62 @@
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <string.h>
+
+//通过客户端连接哪个服务器
+// ./client [127.0.0.1]  [9090]
+//         环回ip，表示自己的ip地址？发送数据是我自己，接收方也是我自己
+
+int main(int agrc,char* argv[]){
+    if(agrc != 3){
+        printf("Usage ./client [ip] [port]\n");
+        return 1;
+    }
+    //创建一个socket，协议族，面向数据报
+    int fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if(fd < 0){
+        perror("socket");
+        return 1;
+    }
+    
+    struct sockaddr_in server_addr;//保存服务器端的ip地址和端口号
+    server_addr.sin_family = AF_INET;//协议族
+    server_addr.sin_addr.s_addr = inet_addr(argv[1]);//将ip地址进行强转，unint_32
+    server_addr.sin_port = htons(atoi(argv[2]));//将端口号强转为unint_16
+
+    //如果客户端不绑定端口号，操作系统会在通信时自动分配一个端口号
+    //一般不绑定端口号，由于客户端的机器装了哪些程序不确定
+    //如果强行绑定端口号，就可能和客户端的其他程序冲突
+    
+    while(1){
+        char buf[1024] = {0};
+        ssize_t read_size = read(0, buf, sizeof(buf)-1);
+        if(read_size < 0){//客户端从标准输入读取数据出错，可以进行退出，因为一个服务器可以对应多个客户端
+            perror("read");
+            return 2;
+        }
+
+        if(read_size == 0){//read返回值为0表示读到文件结束EOF
+            printf("read done\n");
+            return 0;//表示代码跑完，结果正确
+        }
+        buf[read_size] = '\0';
+
+        //向服务器发数据
+        sendto(fd, buf, strlen(buf), 0,
+                (struct sockaddr*)&server_addr, sizeof(server_addr));
+        
+        char buf_output[1024] = {0};
+        read_size = recvfrom(fd, buf_output, sizeof(buf_output)-1, 0,
+                    NULL, NULL);//不关心服务器的端口号和ip，因为客户端一定知道从哪个服务器端返回的数据
+        if(read_size < 0){
+            perror("recvfrom");
+            return 2;
+        }
+        buf_output[read_size] = '\0';
+        printf("server respon: %s\n",buf_output);
+    }
+
+    return 0;
+}
