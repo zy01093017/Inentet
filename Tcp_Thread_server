@@ -1,0 +1,90 @@
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <sys/types.h>
+#include <stdlib.h>
+#include <string.h>
+#include <pthread.h>
+
+
+pthread_t tid;
+
+void* ProcessWorker(void* arg)
+{
+    int fd = *(int*)arg;
+    
+    char buf[128];
+    while(1){//不断从客户端拿数据，在发回给客户端
+        ssize_t s = read(fd, buf, sizeof(buf));
+        if(s < 0){
+            perror("read");
+            break;
+        }
+        else if(s == 0){
+            printf("client quit...\n");
+            break;
+        }
+
+
+        buf[s] = 0;
+        printf("client# %s\n",buf);
+        
+        send(fd, buf, strlen(buf), 0);
+    }
+}
+// ./server  ip  port
+int main(int argc, char* argv[])
+{
+    if(argc != 3){
+        printf("Usage ./server [ip] [port]\n");
+        return 1;
+    }
+
+    //创建套接字
+    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if(sockfd < 0){
+        perror("socket");
+        return 2;
+    }
+
+    //绑定端口号
+    struct sockaddr_in server;
+    server.sin_family = AF_INET;
+    server.sin_addr.s_addr = inet_addr(argv[1]);
+    server.sin_port = htons(atoi(argv[2]));
+
+    if(bind(sockfd, (struct sockaddr*)&server, sizeof(server)) < 0){//绑定失败
+        perror("bind");
+        return 3;
+    }
+
+    //监听
+    if(listen(sockfd, 5) < 0){
+        perror("listen");
+        return 4;
+    }
+
+    struct sockaddr_in client;//用于接收到客户端的ip和端口号
+    socklen_t len = sizeof(client);
+
+    char buf[128];
+    for(;;){//服务器一直运行
+
+        int clientfd = accept(sockfd, (struct sockaddr*)&client, &len);
+        
+        if(clientfd < 0){//当没有接收到客户端，尝试重新接收
+            perror("accept");
+            continue;
+        }
+        
+        printf("Get connet [%s] [%d]\n",inet_ntoa(client.sin_addr), ntohs(client.sin_port));
+        
+        //创建线程，主线程去监听，新线程去处理
+         pthread_create(&tid, NULL, ProcessWorker, (void*)&clientfd);
+         //在这里不能关闭文件描述符，因为主线程和新线程看到的是一个文件描述符，当把文件描述符关闭后，新线程无法获取从客户端发送的请求或消息
+         pthread_detach(tid);//并将新线程分离出去
+    }
+    return 0;
+}
